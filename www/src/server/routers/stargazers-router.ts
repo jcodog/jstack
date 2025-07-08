@@ -15,8 +15,8 @@ export const stargazersRouter = j.router({
    *
    * @internal This endpoint is meant to be called by QStash scheduler only
    */
-  prefetch: publicProcedure.post(async ({ c, ctx, input }) => {
-    const { redis, qstash } = ctx
+  prefetch: publicProcedure.post(async ({ c, ctx }) => {
+    const { redis } = ctx
     const {
       AMPLIFY_URL,
       QSTASH_CURRENT_SIGNING_KEY,
@@ -37,19 +37,24 @@ export const stargazersRouter = j.router({
       ""
     const body = await c.req.raw.text().catch(() => "{}")
 
-    // throws if invalid, handled and logged by appRouter-level .onError
-    await receiver.verify({
-      body,
-      signature,
-      url: ROUTER_URL,
-    })
+    try {
+      await receiver.verify({
+        body,
+        signature,
+        url: ROUTER_URL,
+      })
+    } catch (err) {
+      return c.json(
+        { success: false, message: "Invalid request signature" },
+        401,
+      )
+    }
 
     const { stargazers, stargazerCount } = await fetchStargazers({
       GITHUB_TOKEN,
     })
 
     await redis.set("stargazer-info", { stargazerCount, stargazers })
-    await qstash.publishJSON({ url: ROUTER_URL, delay: "10s" })
 
     return c.json({ success: true })
   }),
